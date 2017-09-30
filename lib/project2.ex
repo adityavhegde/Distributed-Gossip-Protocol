@@ -1,21 +1,58 @@
 defmodule Gossip do
   
+  @doc """"
+
+  """
+  def grid2DTopology(nodesList) do
+    
+  end
+
+  def gridImpTopology(nodesList) do
+
+  end
+
+  def fullTopology(nodesList) do
+  
+  end
+
+  # takes args of num of processes to be created and returns a list of process ids
+  def createProcesses(numProcesses) do
+
+  end
+  
 end
 
 defmodule Project2 do
   def main(args) do
-    topology = args 
+    numNodes = args 
               |> parse_args 
               |> Enum.at(0)
+
+    topology = args 
+              |> parse_args 
+              |> Enum.at(1)
+
     case topology do
       full - >
-        #call full topology
+        createProcesses |> fullTopology
+        
       2D ->
-        #call 2D grid
+        :math.sqrt(numNodes) 
+          |> Float.round(0)
+          |> :math.pow(2)
+          |> createProcesses 
+          |> grid2DTopology
+      
       line ->
-        #call line grid
+        createProcesses |> lineTopology
+        
       imp2D ->
-        #call imperfect 2D grid
+        :math.sqrt(numNodes) 
+        |> Float.round(0)
+        |> :math.pow(2)
+        |> createProcesses 
+        |> gridImpTopology
+    
     end
   end
 
