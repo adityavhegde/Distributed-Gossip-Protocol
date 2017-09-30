@@ -1,4 +1,4 @@
-defmodule DistributedGossipProtocol.Mixfile do
+defmodule Project2.Mixfile do
   use Mix.Project
 
   def project do
@@ -7,6 +7,7 @@ defmodule DistributedGossipProtocol.Mixfile do
       version: "0.1.0",
       #elixir: "~> 1.5",
       start_permanent: Mix.env == :prod,
+      escript: [main_module: Project2],
       deps: deps()
     ]
   end
