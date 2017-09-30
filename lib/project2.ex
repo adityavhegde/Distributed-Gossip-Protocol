@@ -7,8 +7,16 @@ defmodule Project2 do
     topology = args 
               |> parse_args 
               |> Enum.at(0)
-    cond do topology
-  end
+    case topology do
+      full - >
+        #call full topology
+      2D ->
+        #call 2D grid
+      line ->
+        #call line grid
+      imp2D ->
+        #call imperfect 2D grid
+    end
   end
 
   #parsing the input argument
