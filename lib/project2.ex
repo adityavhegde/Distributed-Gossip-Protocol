@@ -1,5 +1,20 @@
+defmodule Gossip do
+  
+end
+
 defmodule Project2 do
-  def hello do
-    :world
+  def main(args) do
+    topology = args 
+              |> parse_args 
+              |> Enum.at(0)
+    cond do topology
+  end
+  end
+
+  #parsing the input argument
+  defp parse_args(args) do
+    {_, word, _} = args 
+    |> OptionParser.parse(strict: [:string])
+    word
   end
 end
