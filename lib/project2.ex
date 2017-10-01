@@ -38,6 +38,8 @@ defmodule Gossip do
 
       end)
     end)
+
+    send list2d |> elem(0) |> elem(0), :gossip 
     
   end
 
