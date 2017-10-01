@@ -40,6 +40,7 @@ defmodule GossipSpread do
 end
 
 defmodule Gossip do
+
   def lineTopology(nodesList) do
     numNodes = tuple_size(nodesList)
     #IO.inspect Process.registered()
@@ -61,16 +62,59 @@ defmodule Gossip do
     Gossip.checkConvergence(numNodes, b)
   end
 
+
   def grid2DTopology(nodesList) do
+
+    len = :math.sqrt(tuple_size(nodesList)) |> round
+
+    list2d = Gossip.segment(nodesList, {}, {}, 0, len)
+    
+    Enum.each(0..len-1, fn(i) -> 
+      Enum.each(0..len-1, fn(j) ->
+        neighbors = []
+        cond do
+          i-1 >= 0 ->
+            neighbors = neighbors ++ [list2d |> elem(i-1) |> elem(j)]
+          true ->true
+        end 
+
+        cond do
+          i+1 < len ->
+            neighbors = neighbors ++ [list2d |> elem(i+1) |> elem(j)]
+          true -> true
+        end 
+
+        cond do
+          j-1 >= 0 ->
+            neighbors = neighbors ++ [list2d |> elem(i) |> elem(j-1)]
+          true -> true
+        end
+
+        cond do
+          j + 1 < len ->
+            neighbors = neighbors ++ [list2d |> elem(i) |> elem(j+1)]
+          true -> true
+        end
+
+        #send
+          send list2d |> elem(i) |> elem(j), neighbors   
+
+      end)
+    end)
+
+    send list2d |> elem(0) |> elem(0), :gossip 
     
   end
 
   def gridImpTopology(nodesList) do
-
+  
   end
 
   def fullTopology(nodesList) do
-
+    Enum.each(0..tuple_size(nodesList), fn(index) -> 
+      send nodesList |> elem(index), Tuple.to_list(nodesList) -- [elem(nodesList, index)]
+    end) 
+    send nodesList |> elem(0), :gossip
   end
 
   # takes args of num of processes to be created and returns a list of process ids
@@ -100,6 +144,21 @@ defmodule Gossip do
         Gossip.checkConvergence(nodesToInform-1, b)
     end
   end
+
+  def segment(nodesList, list2d, tempList, index, len) do
+    cond do
+      rem(index+1, len) == 0 ->
+        cond do 
+          index == tuple_size(nodesList) - 1 ->
+            # returns the 2-d tuple after reading the last element
+            Tuple.append(list2d, Tuple.append(tempList, elem(nodesList, index)))
+          true -> 
+            segment(nodesList, Tuple.append(list2d, Tuple.append(tempList, elem(nodesList, index))), {}, index + 1, len)
+        end
+      true ->
+        segment(nodesList, list2d, Tuple.append(tempList, elem(nodesList, index)), index + 1, len)
+      end
+  end
 end
 
 defmodule Project2 do
@@ -119,14 +178,17 @@ defmodule Project2 do
     case topology do
       "full" ->
         numNodes |> Gossip.createProcesses |> Gossip.fullTopology
+
       "2D" ->
         :math.sqrt(numNodes) 
           |> Float.round(0)
           |> :math.pow(2)
           |> Gossip.createProcesses 
           |> Gossip.grid2DTopology
+
       "line" ->
         numNodes |> Gossip.createProcesses |> Gossip.lineTopology
+
       "imp2D" ->
         :math.sqrt(numNodes) 
         |> Float.round(0)
