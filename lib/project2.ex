@@ -47,23 +47,18 @@ defmodule Gossip do
     Enum.each(0..numNodes-1, fn(i) ->
       #send list of neighbors of every ith to the ith node
       neighbors_i = []
-      try do
-        neighbors_i ++ [nodesList |> elem(i-1)]
-      rescue
-        [ArgumentError] ->
-          true
+      if (i-1) >= 0 do
+        neighbors_i = neighbors_i ++ [nodesList |> elem(i-1)]
       end
-      try do
-        neighbors_i ++ [nodesList |> elem(i+1)]
-      rescue
-        [ArgumentError] ->
-          true
+      if (i+1) <numNodes do
+        neighbors_i = neighbors_i ++ [nodesList |> elem(i+1)]
       end
       currentNode = nodesList |> elem(i)
       send currentNode, neighbors_i
     end)
+    b = :os.system_time(:milli_seconds)
     send nodesList |> elem(0), :gossip
-    Gossip.checkConvergence(numNodes)
+    Gossip.checkConvergence(numNodes, b)
   end
 
   def grid2DTopology(nodesList) do
@@ -93,15 +88,16 @@ defmodule Gossip do
     Gossip.createProcesses(numNodes-1, nodesList)
   end
 
-  def checkConvergence(0) do
+  def checkConvergence(0, b) do
+    IO.inspect :os.system_time(:milli_seconds)-b
     IO.inspect "We have converged"
   end
-  def checkConvergence(nodesToInform) do
+  def checkConvergence(nodesToInform, b) do
     receive do
       #check if a node has been informed of a gossip
       :informed ->
-        IO.inspect "Nodes left: #{nodesToInform}"
-        Gossip.checkConvergence(nodesToInform-1)
+        #IO.inspect "Nodes left: #{nodesToInform}"
+        Gossip.checkConvergence(nodesToInform-1, b)
     end
   end
 end
