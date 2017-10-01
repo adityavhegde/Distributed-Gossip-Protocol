@@ -64,10 +64,11 @@ defmodule Gossip do
 
   def grid2DTopology(nodesList) do
     #IO.puts "2D grid called"
-    numNodes = :math.sqrt(tuple_size(nodesList)) |> round
-    list2d = Gossip.segment(nodesList, {}, {}, 0, numNodes)
-    Enum.each(0..numNodes-1, fn(i) -> 
-      Enum.each(0..numNodes-1, fn(j) ->
+    numNodes = tuple_size(nodesList)
+    side = :math.sqrt(tuple_size(nodesList)) |> round
+    list2d = Gossip.segment(nodesList, {}, {}, 0, side)
+    Enum.each(0..side-1, fn(i) -> 
+      Enum.each(0..side-1, fn(j) ->
         neighbors = []
         cond do
           i-1 >= 0 ->
@@ -75,7 +76,7 @@ defmodule Gossip do
           true ->true
         end 
         cond do
-          i+1 < numNodes ->
+          i+1 < side ->
             neighbors = neighbors ++ [list2d |> elem(i+1) |> elem(j)]
           true -> true
         end 
@@ -85,7 +86,7 @@ defmodule Gossip do
           true -> true
         end
         cond do
-          j + 1 < numNodes ->
+          j + 1 < side ->
             neighbors = neighbors ++ [list2d |> elem(i) |> elem(j+1)]
           true -> true
         end
