@@ -62,47 +62,40 @@ defmodule Gossip do
     Gossip.checkConvergence(numNodes, b)
   end
 
-
   def grid2DTopology(nodesList) do
-
-    len = :math.sqrt(tuple_size(nodesList)) |> round
-
-    list2d = Gossip.segment(nodesList, {}, {}, 0, len)
-    
-    Enum.each(0..len-1, fn(i) -> 
-      Enum.each(0..len-1, fn(j) ->
+    #IO.puts "2D grid called"
+    numNodes = :math.sqrt(tuple_size(nodesList)) |> round
+    list2d = Gossip.segment(nodesList, {}, {}, 0, numNodes)
+    Enum.each(0..numNodes-1, fn(i) -> 
+      Enum.each(0..numNodes-1, fn(j) ->
         neighbors = []
         cond do
           i-1 >= 0 ->
             neighbors = neighbors ++ [list2d |> elem(i-1) |> elem(j)]
           true ->true
         end 
-
         cond do
-          i+1 < len ->
+          i+1 < numNodes ->
             neighbors = neighbors ++ [list2d |> elem(i+1) |> elem(j)]
           true -> true
         end 
-
         cond do
           j-1 >= 0 ->
             neighbors = neighbors ++ [list2d |> elem(i) |> elem(j-1)]
           true -> true
         end
-
         cond do
-          j + 1 < len ->
+          j + 1 < numNodes ->
             neighbors = neighbors ++ [list2d |> elem(i) |> elem(j+1)]
           true -> true
         end
-
-        #send
           send list2d |> elem(i) |> elem(j), neighbors   
-
       end)
     end)
 
+    b = :os.system_time(:milli_seconds)
     send list2d |> elem(0) |> elem(0), :gossip 
+    Gossip.checkConvergence(numNodes, b)
     
   end
 
@@ -111,10 +104,15 @@ defmodule Gossip do
   end
 
   def fullTopology(nodesList) do
-    Enum.each(0..tuple_size(nodesList), fn(index) -> 
-      send nodesList |> elem(index), Tuple.to_list(nodesList) -- [elem(nodesList, index)]
+    numNodes = tuple_size(nodesList)
+    Enum.each(0..numNodes-1, fn(i) -> 
+      #send this nodes all the nodes other than itself, as neighbors
+      #IO.inspect Tuple.to_list(nodesList) -- [elem(nodesList, i)]
+      send nodesList |> elem(i), Tuple.to_list(nodesList) -- [elem(nodesList, i)]
     end) 
     send nodesList |> elem(0), :gossip
+    b = :os.system_time(:milli_seconds)
+    Gossip.checkConvergence(numNodes, b)
   end
 
   # takes args of num of processes to be created and returns a list of process ids
@@ -181,8 +179,9 @@ defmodule Project2 do
 
       "2D" ->
         :math.sqrt(numNodes) 
-          |> Float.round(0)
+          |> round
           |> :math.pow(2)
+          |> round
           |> Gossip.createProcesses 
           |> Gossip.grid2DTopology
 
