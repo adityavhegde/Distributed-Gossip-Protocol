@@ -8,28 +8,28 @@ defmodule Gossip do
     
     Enum.each(0..len-1, fn(i) -> 
       Enum.each(0..len-1, fn(j) ->
-        neighbors = {}
+        neighbors = []
         cond do
           i-1 >= 0 ->
-            neighbors = Tuple.append(neighbors, list2d |> elem(i-1) |> elem(j))
+            neighbors = neighbors ++ [list2d |> elem(i-1) |> elem(j)]
           true ->true
         end 
 
         cond do
           i+1 < len ->
-            neighbors = Tuple.append(neighbors, list2d |> elem(i+1) |> elem(j))
+            neighbors = neighbors ++ [list2d |> elem(i+1) |> elem(j)]
           true -> true
         end 
 
         cond do
           j-1 >= 0 ->
-            neighbors = Tuple.append(neighbors, list2d |> elem(i) |> elem(j-1))
+            neighbors = neighbors ++ [list2d |> elem(i) |> elem(j-1)]
           true -> true
         end
 
         cond do
           j + 1 < len ->
-            neighbors = Tuple.append(neighbors, list2d |> elem(i) |> elem(j+1))
+            neighbors = neighbors ++ [list2d |> elem(i) |> elem(j+1)]
           true -> true
         end
 
@@ -44,11 +44,14 @@ defmodule Gossip do
   end
 
   def gridImpTopology(nodesList) do
-
+  
   end
 
   def fullTopology(nodesList) do
-  
+    Enum.each(0..tuple_size(nodesList), fn(index) -> 
+      send nodesList |> elem(index), Tuple.to_list(nodesList) -- [elem(nodesList, index)]
+    end) 
+    send nodesList |> elem(0), :gossip
   end
 
   # takes args of num of processes to be created and returns a list of process ids
