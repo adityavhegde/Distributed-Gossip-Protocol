@@ -1,67 +1,44 @@
 defmodule GossipSpread do
   @interval 1
   def rumor(neighbors_list, counter, master, procId) do
-    cond do
-      #stop the process when counter reaches 10
-      counter >= 10 ->
-        IO.puts "<plotty: inactive, #{procId}>"
-        exit(:shutdown)
+    #stop the process when counter reaches 10
+    if counter >= 10 do
+      #IO.puts "<plotty: inactive, #{procId}>"
+      receive do
+        :terminate ->
+          rumor(neighbors_list, counter, master, procId)
+      end
     #otherwise wait for gossip or neighbors list
-      true ->
-        receive do
-          :gossip ->
-            case counter do
-              #got the rumor for the first time
-              0 ->
-                IO.puts "<plotty: infected, #{procId}>"
-                send master, :informed
-              _ ->
-                true
-            end
-            cond do
-              #check if this node even knows the gossip
-              Enum.count(neighbors_list)!=0->
-                selectedNeighbor = neighbors_list |> Enum.random
-                cond do
-                  Process.alive?(selectedNeighbor) ->
-                    send selectedNeighbor, :gossip
-                    GossipSpread.rumor(neighbors_list, counter+1, master, procId)
-                true ->
-                  List.delete(neighbors_list, selectedNeighbor)
-                  |> GossipSpread.rumor(counter+1, master, procId)
-                end
-              true ->
-                GossipSpread.rumor(neighbors_list, counter+1, master, procId)
-            end
-          updated_neighbors_list ->
-            GossipSpread.rumor(updated_neighbors_list, counter, master, procId)
-        after 
-          @interval ->
-            cond do
-              #check if this node even knows the gossip, select a random neighbor if true, and forward the gossip
-              counter > 0 and Enum.count(neighbors_list)!=0->
-                selectedNeighbor = neighbors_list |> Enum.random
-                cond do
-                  Process.alive?(selectedNeighbor) ->
-                    send selectedNeighbor, :gossip
-                    GossipSpread.rumor(neighbors_list, counter, master, procId)
-                  true ->
-                    List.delete(neighbors_list, selectedNeighbor)
-                    |> GossipSpread.rumor(counter, master, procId)
-                end
-              true ->
-                GossipSpread.rumor(neighbors_list, counter, master, procId)
-            end
-        end
+    else
+      receive do
+        :gossip ->
+          IO.inspect procId
+          if counter == 0 do
+            #IO.puts "<plotty: infected, #{procId}>"
+            send master, :informed
+          end
+          #check if this node even knows the gossip
+          selectedNeighbor = neighbors_list |> Enum.random
+          send selectedNeighbor, :gossip
+          GossipSpread.rumor(neighbors_list, counter+1, master, procId)
+        neighbors_list ->
+          GossipSpread.rumor(neighbors_list, counter, master, procId)
+      after 
+        @interval ->
+          #check if this node even knows the gossip, select a random neighbor if true, and forward the gossip
+          if counter > 0 do
+            selectedNeighbor = neighbors_list |> Enum.random
+            send selectedNeighbor, :gossip
+          end
+          GossipSpread.rumor(neighbors_list, counter, master, procId)
+      end
     end
   end
 end
 
 defmodule Gossip do
-
   def lineTopology(nodesList) do
     numNodes = tuple_size(nodesList)
-    #IO.inspect Process.registered()
     #no need to re-arrange nodesList
     Enum.each(0..numNodes-1, fn(i) ->
       #send list of neighbors of every ith to the ith node
@@ -73,12 +50,11 @@ defmodule Gossip do
           neighbors_i ++ [nodesList |> elem(numNodes-1)]
       end
       neighbors_i = cond do
-        (i+1) <numNodes ->
+        (i+1) < numNodes ->
           neighbors_i ++ [nodesList |> elem(i+1)]
         true ->
           neighbors_i ++ [nodesList |> elem(0)]
       end
-      #IO.inspect neighbors_i
       currentNode = nodesList |> elem(i)
       send currentNode, neighbors_i
     end)
@@ -138,8 +114,8 @@ defmodule Gossip do
       #send this nodes all the nodes other than itself, as neighbors
       send nodesList |> elem(i), Tuple.to_list(nodesList) -- [elem(nodesList, i)]
     end) 
-    send nodesList |> elem(0), :gossip
     b = :os.system_time(:milli_seconds)
+    send nodesList |> elem(0), :gossip
     Gossip.checkConvergence(numNodes, b)
   end
 
@@ -159,8 +135,11 @@ defmodule Gossip do
   end
 
   def checkConvergence(0, b) do
-    IO.inspect :os.system_time(:milli_seconds)-b
-    IO.inspect "We have converged"
+    IO.inspect "Time to converge: #{:os.system_time(:milli_seconds)-b} milliseconds"
+    receive do 
+      :ok ->
+        :ok
+    end
   end
   def checkConvergence(nodesToInform, b) do
     receive do
@@ -205,6 +184,9 @@ defmodule Project2 do
       "full" ->
         numNodes |> Gossip.createProcesses |> Gossip.fullTopology
 
+      "line" ->
+        numNodes |> Gossip.createProcesses |> Gossip.lineTopology
+
       "2D" ->
         :math.sqrt(numNodes) 
           |> round
@@ -212,9 +194,6 @@ defmodule Project2 do
           |> round
           |> Gossip.createProcesses 
           |> Gossip.grid2DTopology
-
-      "line" ->
-        numNodes |> Gossip.createProcesses |> Gossip.lineTopology
 
       "imp2D" ->
         :math.sqrt(numNodes) 
