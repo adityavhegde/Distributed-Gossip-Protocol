@@ -3,7 +3,7 @@ defmodule GossipSpread do
   def rumor(neighbors_list, counter, master, procId) do
     #stop the process when counter reaches 10
     if counter >= 10 do
-      #IO.puts "<plotty: inactive, #{procId}>"
+      IO.puts "<plotty: inactive, #{procId}>"
       receive do
         :terminate ->
           rumor(neighbors_list, counter, master, procId)
@@ -14,12 +14,13 @@ defmodule GossipSpread do
         :gossip ->
           #IO.inspect procId
           if counter == 0 do
-            #IO.puts "<plotty: infected, #{procId}>"
+            IO.puts "<plotty: infected, #{procId}>"
             send master, :informed
           end
           #check if this node even knows the gossip
           selectedNeighbor = neighbors_list |> Enum.random
           send selectedNeighbor, :gossip
+          #IO.inspect selectedNeighbor
           GossipSpread.rumor(neighbors_list, counter+1, master, procId)
         neighbors_list ->
           GossipSpread.rumor(neighbors_list, counter, master, procId)
@@ -35,8 +36,37 @@ defmodule GossipSpread do
     end
   end
 
-  def pushsum(neighbors_list, s, w, last3Ratios) do
-    
+  def pushsum(neighbors_list, s, w, past, procId) do
+    receive do
+      {rec_s, rec_w} -> 
+        send neighbors_list |> Enum.random, {(s+rec_s)/2, (w+rec_w)/2}
+
+        final_sw = (s+rec_s)/(w+rec_w)
+        
+        cond do  
+          Enum.count(past) == 0 ->
+            IO.puts "<plotty: infected, #{procId}>"
+            pushsum(neighbors_list, (s+rec_s)/2, (w+rec_w)/2, past ++ [final_sw], procId)
+          Enum.count(past) < 3 ->
+            pushsum(neighbors_list, (s+rec_s)/2, (w+rec_w)/2, past ++ [final_sw], procId)
+
+          true -> 
+            a = abs((s+rec_s)/(w+rec_w) - s/w)
+            b = abs(Enum.at(past, 2) - Enum.at(past, 1))
+            c = abs(Enum.at(past, 1) - Enum.at(past, 0))
+
+            if a < :math.pow(10, -3) and b < :math.pow(10, -3) and c < :math.pow(10, -3) do
+              IO.puts "<plotty: inactive, #{procId}>"
+              receive do
+                :terminate -> 
+                  pushsum(neighbors_list, s, w, past, procId)
+              end
+            end
+            pushsum(neighbors_list, (s+rec_s)/2, (w+rec_w)/2, tl(past) ++ [final_sw], procId)
+        end
+      neighbors_list ->
+        pushsum(neighbors_list, s, w, past, procId)    
+    end
   end
  
 end
@@ -63,13 +93,10 @@ defmodule Gossip do
       currentNode = nodesList |> elem(i)
       send currentNode, neighbors_i
     end)
-    b = :os.system_time(:milli_seconds)
-    send nodesList |> elem(0), :gossip
-    Gossip.checkConvergence(numNodes, b)
   end
 
   def grid2DTopology(nodesList, imperfect) do
-    numNodes = tuple_size(nodesList)
+    #numNodes = tuple_size(nodesList)
     side = :math.sqrt(tuple_size(nodesList)) |> round
     list2d = Gossip.segment(nodesList, {}, {}, 0, side)
     Enum.each(0..side-1, fn(i) -> 
@@ -99,7 +126,6 @@ defmodule Gossip do
           true ->
             neighbors_ij ++ [list2d |> elem(i) |> elem(0)]
         end
-
         cond do #TODO: question -> can the randomly selected node be an existing neighbor
           imperfect == :imperf ->
             neighbors_ij = neighbors_ij ++ [Tuple.to_list(nodesList) -- [list2d |> elem(i) |> elem(j)|neighbors_ij] |> Enum.random]
@@ -109,11 +135,6 @@ defmodule Gossip do
           end
       end)
     end)
-
-    b = :os.system_time(:milli_seconds)
-    send list2d |> elem(0) |> elem(0), :gossip 
-    Gossip.checkConvergence(numNodes, b)
-    
   end
 
   def fullTopology(nodesList) do
@@ -122,9 +143,6 @@ defmodule Gossip do
       #send this nodes all the nodes other than itself, as neighbors
       send nodesList |> elem(i), Tuple.to_list(nodesList) -- [elem(nodesList, i)]
     end) 
-    b = :os.system_time(:milli_seconds)
-    send nodesList |> elem(0), :gossip
-    Gossip.checkConvergence(numNodes, b)
   end
 
   # takes args of num of processes to be created and returns a list of process ids
@@ -138,7 +156,6 @@ defmodule Gossip do
   #if gossip algorithm
   def createProcesses(numNodes, nodesList, :gossip) do
     worker = Node.self() |> Node.spawn(GossipSpread, :rumor, [[], 0, self(), numNodes])
-    #Process.register worker, String.to_atom("NodeNew"<>"#{numNodes}")
     nodesList = Tuple.append(nodesList, worker)
     Gossip.createProcesses(numNodes-1, nodesList, :gossip)
   end
@@ -146,7 +163,7 @@ defmodule Gossip do
   def createProcesses(numNodes, nodesList, :pushsum) do
     w = 1
     s = numNodes
-    worker = Node.self() |> Node.spawn(GossipSpread, :pushsum, [[], s, w, []])
+    worker = Node.self() |> Node.spawn(GossipSpread, :pushsum, [[], s, w, [], numNodes])
     nodesList = Tuple.append(nodesList, worker)
     Gossip.createProcesses(numNodes-1, nodesList, :pushsum)
   end
@@ -198,35 +215,50 @@ defmodule Project2 do
     algorithm = args
               |> parse_args
               |> Enum.at(2)
-              |> String.to_atom
     
-    IO.inspect algorithm
+    algorithm = 
+      if algorithm == "gossip" do
+        :gossip
+      else 
+        :pushsum
+      end
     
     IO.puts "<plotty: draw, #{numNodes}>"
 
     case topology do
       "full" ->
-        numNodes |> Gossip.createProcesses(algorithm) |> Gossip.fullTopology
+        nodesList = numNodes |> Gossip.createProcesses(algorithm) 
+        nodesList |> Gossip.fullTopology
 
       "line" ->
-        numNodes |> Gossip.createProcesses(algorithm) |> Gossip.lineTopology
+        nodesList = numNodes |> Gossip.createProcesses(algorithm) 
+        Gossip.lineTopology(nodesList)
 
       "2D" ->
-        :math.sqrt(numNodes) 
-          |> round
-          |> :math.pow(2)
-          |> round
-          |> Gossip.createProcesses(algorithm) 
-          |> Gossip.grid2DTopology(:perf)
+        nodesList = :math.sqrt(numNodes) 
+                    |> round
+                    |> :math.pow(2)
+                    |> round
+                    |> Gossip.createProcesses(algorithm) 
+        nodesList |> Gossip.grid2DTopology(:perf)
 
       "imp2D" ->
-        :math.sqrt(numNodes) 
-        |> Float.round(0)
-        |> :math.pow(2)
-        |> round
-        |> Gossip.createProcesses(algorithm) 
-        |> Gossip.grid2DTopology(:imperf)
-    end
+        nodesList = :math.sqrt(numNodes) 
+                    |> Float.round(0)
+                    |> :math.pow(2)
+                    |> round
+                    |> Gossip.createProcesses(algorithm) 
+        nodesList |> Gossip.grid2DTopology(:imperf) 
+    end  
+
+      b = :os.system_time(:milli_seconds)
+      cond do 
+        algorithm == :gossip ->
+          send nodesList |> elem(0), :gossip
+        true -> 
+         send nodesList |> Tuple.to_list |> Enum.random, {0, 0}
+      end
+      Gossip.checkConvergence(numNodes, b)
   end
 
   #parsing the input argument
