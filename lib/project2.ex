@@ -12,7 +12,7 @@ defmodule GossipSpread do
     else
       receive do
         :gossip ->
-          IO.inspect procId
+          #IO.inspect procId
           if counter == 0 do
             #IO.puts "<plotty: infected, #{procId}>"
             send master, :informed
@@ -34,6 +34,8 @@ defmodule GossipSpread do
       end
     end
   end
+
+ 
 end
 
 defmodule Gossip do
@@ -63,7 +65,7 @@ defmodule Gossip do
     Gossip.checkConvergence(numNodes, b)
   end
 
-  def grid2DTopology(nodesList) do
+  def grid2DTopology(nodesList, imperfect) do
     numNodes = tuple_size(nodesList)
     side = :math.sqrt(tuple_size(nodesList)) |> round
     list2d = Gossip.segment(nodesList, {}, {}, 0, side)
@@ -94,7 +96,17 @@ defmodule Gossip do
           true ->
             neighbors_ij ++ [list2d |> elem(i) |> elem(0)]
         end
-          send list2d |> elem(i) |> elem(j), neighbors_ij   
+
+        cond do #TODO: question -> can the randomly selected node be an existing neighbor
+          imperfect == :imperf ->
+            #IO.inspect [list2d |> elem(i) |> elem(j)|neighbors_ij]
+            neighbors_ij = neighbors_ij ++ [Tuple.to_list(nodesList) -- [list2d |> elem(i) |> elem(j)|neighbors_ij] |> Enum.random]
+            send list2d |> elem(i) |> elem(j), neighbors_ij
+          
+          true -> 
+            send list2d |> elem(i) |> elem(j), neighbors_ij
+          end
+          #send list2d |> elem(i) |> elem(j), neighbors_ij
       end)
     end)
 
@@ -102,10 +114,6 @@ defmodule Gossip do
     send list2d |> elem(0) |> elem(0), :gossip 
     Gossip.checkConvergence(numNodes, b)
     
-  end
-
-  def gridImpTopology(nodesList) do
-  
   end
 
   def fullTopology(nodesList) do
@@ -193,14 +201,15 @@ defmodule Project2 do
           |> :math.pow(2)
           |> round
           |> Gossip.createProcesses 
-          |> Gossip.grid2DTopology
+          |> Gossip.grid2DTopology(:perf)
 
       "imp2D" ->
         :math.sqrt(numNodes) 
         |> Float.round(0)
         |> :math.pow(2)
+        |> round
         |> Gossip.createProcesses 
-        |> Gossip.gridImpTopology
+        |> Gossip.grid2DTopology(:imperf)
     end
   end
 
