@@ -35,6 +35,9 @@ defmodule GossipSpread do
     end
   end
 
+  def pushsum(neighbors_list, s, w, last3Ratios) do
+    
+  end
  
 end
 
@@ -99,14 +102,11 @@ defmodule Gossip do
 
         cond do #TODO: question -> can the randomly selected node be an existing neighbor
           imperfect == :imperf ->
-            #IO.inspect [list2d |> elem(i) |> elem(j)|neighbors_ij]
             neighbors_ij = neighbors_ij ++ [Tuple.to_list(nodesList) -- [list2d |> elem(i) |> elem(j)|neighbors_ij] |> Enum.random]
             send list2d |> elem(i) |> elem(j), neighbors_ij
-          
           true -> 
             send list2d |> elem(i) |> elem(j), neighbors_ij
           end
-          #send list2d |> elem(i) |> elem(j), neighbors_ij
       end)
     end)
 
@@ -128,18 +128,27 @@ defmodule Gossip do
   end
 
   # takes args of num of processes to be created and returns a list of process ids
-  def createProcesses(numNodes) do
+  def createProcesses(numNodes, algorithm) do
     nodesList = {}
-    Gossip.createProcesses(numNodes, nodesList)
+    Gossip.createProcesses(numNodes, nodesList, algorithm)
   end
-  def createProcesses(0, nodesList) do
+  def createProcesses(0, nodesList, _) do
     nodesList
   end
-  def createProcesses(numNodes, nodesList) do
+  #if gossip algorithm
+  def createProcesses(numNodes, nodesList, :gossip) do
     worker = Node.self() |> Node.spawn(GossipSpread, :rumor, [[], 0, self(), numNodes])
     #Process.register worker, String.to_atom("NodeNew"<>"#{numNodes}")
     nodesList = Tuple.append(nodesList, worker)
-    Gossip.createProcesses(numNodes-1, nodesList)
+    Gossip.createProcesses(numNodes-1, nodesList, :gossip)
+  end
+  #if push-sum algorithm
+  def createProcesses(numNodes, nodesList, :pushsum) do
+    w = 1
+    s = numNodes
+    worker = Node.self() |> Node.spawn(GossipSpread, :pushsum, [[], s, w, []])
+    nodesList = Tuple.append(nodesList, worker)
+    Gossip.createProcesses(numNodes-1, nodesList, :pushsum)
   end
 
   def checkConvergence(0, b) do
@@ -186,21 +195,28 @@ defmodule Project2 do
               |> parse_args 
               |> Enum.at(1)
     
+    algorithm = args
+              |> parse_args
+              |> Enum.at(2)
+              |> String.to_atom
+    
+    IO.inspect algorithm
+    
     IO.puts "<plotty: draw, #{numNodes}>"
 
     case topology do
       "full" ->
-        numNodes |> Gossip.createProcesses |> Gossip.fullTopology
+        numNodes |> Gossip.createProcesses(algorithm) |> Gossip.fullTopology
 
       "line" ->
-        numNodes |> Gossip.createProcesses |> Gossip.lineTopology
+        numNodes |> Gossip.createProcesses(algorithm) |> Gossip.lineTopology
 
       "2D" ->
         :math.sqrt(numNodes) 
           |> round
           |> :math.pow(2)
           |> round
-          |> Gossip.createProcesses 
+          |> Gossip.createProcesses(algorithm) 
           |> Gossip.grid2DTopology(:perf)
 
       "imp2D" ->
@@ -208,7 +224,7 @@ defmodule Project2 do
         |> Float.round(0)
         |> :math.pow(2)
         |> round
-        |> Gossip.createProcesses 
+        |> Gossip.createProcesses(algorithm) 
         |> Gossip.grid2DTopology(:imperf)
     end
   end
@@ -216,7 +232,7 @@ defmodule Project2 do
   #parsing the input argument
   defp parse_args(args) do
     {_, word, _} = args 
-    |> OptionParser.parse(strict: [:string, :integer])
+    |> OptionParser.parse(strict: [:integer, :string, :string])
     word
   end
 end
