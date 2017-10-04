@@ -35,6 +35,35 @@ defmodule GossipSpread do
     end
   end
 
+  def pushsum(neighbors_list, s, w, past) do
+    receive do
+      {rec_s, rec_w} -> 
+        send neighbors_list |> Enum.random, {(s+rec_s)/2, (w+rec_w)/2}
+
+        final_sw = (s+rec_s)/(w+rec_w)
+
+        cond do  
+          Enum.count(past) < 3 ->
+            pushsum(neighbors_list, (s+rec_s)/2, (w+rec_w)/2, past ++ [final_sw])
+
+          true -> 
+            a = abs((s+rec_s)/(w+rec_w) - s/w)
+            b = abs(Enum.at(past, 2) - Enum.at(past, 1))
+            c = abs(Enum.at(past, 1) - Enum.at(past, 0))
+
+            if a < :math.pow(10, -10) and b < :math.pow(10, -10) and c < :math.pow(10, -10) do
+              receive do
+                :terminate -> 
+                  pushsum(neighbors_list, s, w, past)
+              end
+            end
+            pushsum(neighbors_list, (s+rec_s)/2, (w+rec_w)/2, tl(past) ++ [final_sw])
+        end
+
+      neighbors_list ->
+        pushsum(neighbors_list, s, w, past)    
+    end
+  end
  
 end
 
