@@ -1,5 +1,5 @@
 defmodule GossipSpread do
-  @interval 1
+  @interval 100
   def rumor(neighbors_list, counter, master, procId) do
     #stop the process when counter reaches 10
     if counter >= 10 do
@@ -35,22 +35,40 @@ defmodule GossipSpread do
     end
   end
 
+  def selectRandom(neighbors_list) do
+    if Enum.count(neighbors_list) > 0 do
+      selectedNeighbor = neighbors_list |> Enum.random
+      if Process.alive?(selectedNeighbor) do
+        selectedNeighbor
+      else
+        List.delete(neighbors_list, selectedNeighbor) |> selectRandom
+      end
+    else
+      receive do
+        :noNeighborLeft ->
+          true
+      end   
+    end
+  end
+
   def pushsum(neighbors_list, s, w, past, procId, master) do
     receive do
       #if received a (s,w) pair, add it to your current, half it and send half forward
       {rec_s, rec_w} -> 
         final_s = (s+rec_s)/2
         final_w = (w+rec_w)/2
-        send neighbors_list |> Enum.random, {final_s, final_w}
+        send neighbors_list |> selectRandom, {final_s, final_w}
         final_sw = final_s/final_w
-        
-        cond do  
-          #check if this is the first time you are receiving (s,w) pair
-          Enum.count(past) == 0 ->
-            IO.puts "<plotty: infected, #{procId}>"
-            pushsum(neighbors_list, final_s, final_w, past ++ [final_sw], procId, master)
+        cond do
           #check if you have not yet gone through 3 rounds
           Enum.count(past) < 3 ->
+            cond do
+              #check if this is the first time you are receiving (s,w) pair
+              Enum.count(past) == 0 ->
+                IO.puts "<plotty: infected, #{procId}>"
+              true ->
+                true
+            end
             pushsum(neighbors_list, final_s, final_w, past ++ [final_sw], procId, master)
           #if more than 3 rounds done, check if no "significant" change has happened for last 3 consecutive rounds
           true -> 
@@ -62,10 +80,7 @@ defmodule GossipSpread do
               IO.puts "<plotty: inactive, #{procId}>"
               IO.inspect final_sw
               send master, :converged
-              receive do
-                :terminate -> 
-                  pushsum(neighbors_list, s, w, past, procId, master)
-              end
+              exit(:shutdown)
             end
             pushsum(neighbors_list, final_s, final_w, tl(past) ++ [final_sw], procId, master)
         end
@@ -76,7 +91,7 @@ defmodule GossipSpread do
         if Enum.count(past) > 0 do
           final_s = s/2
           final_w = w/2
-          send neighbors_list |> Enum.random, {final_s, final_w}
+          send neighbors_list |> selectRandom, {final_s, final_w}
           final_sw = final_s/final_w  
           cond do  
             #check if you have not yet gone through 3 rounds
@@ -92,10 +107,7 @@ defmodule GossipSpread do
                 IO.puts "<plotty: inactive, #{procId}>"
                 IO.inspect final_sw
                 send master, :converged
-                receive do
-                  :terminate -> 
-                    pushsum(neighbors_list, s, w, past, procId, master)
-                end
+                exit(:shutdown)
               end
               pushsum(neighbors_list, final_s, final_w, tl(past) ++ [final_sw], procId, master)
           end 
