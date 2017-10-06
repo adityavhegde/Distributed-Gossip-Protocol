@@ -24,7 +24,7 @@ defmodule GossipSpread do
   def rumor(neighbors_list, counter, master, procId) do
     #stop the process when counter reaches 10
     if counter >= 10 do
-      #IO.puts "<plotty: inactive, #{procId}>"
+      IO.puts "<plotty: inactive, #{procId}>"
       receive do
         :terminate ->
           rumor(neighbors_list, counter, master, procId)
@@ -35,7 +35,7 @@ defmodule GossipSpread do
         :gossip ->
           #IO.inspect procId
           if counter == 0 do
-            #IO.puts "<plotty: infected, #{procId}>"
+            IO.puts "<plotty: infected, #{procId}>"
             send master, :informed
           end
           #check if this node even knows the gossip
@@ -57,12 +57,13 @@ defmodule GossipSpread do
   end
 
   def pushsum(neighbors_list, s, w, past, procId, master) do
+    interval = 100
     receive do
       #if received a (s,w) pair, add it to your current, half it and send half forward
-      {rec_s, rec_w} -> 
+      {:ok, rec_s, rec_w} -> 
         final_s = (s+rec_s)/2
         final_w = (w+rec_w)/2
-        send neighbors_list |> selectRandom, {final_s, final_w}
+        send neighbors_list |> selectRandom, {:ok, final_s, final_w}
         final_sw = final_s/final_w
         cond do
           #check if you have not yet gone through 3 rounds
@@ -92,11 +93,11 @@ defmodule GossipSpread do
       neighbors_list ->
         pushsum(neighbors_list, s, w, past, procId, master) 
     after 
-      @interval ->
+      interval ->
         if Enum.count(past) > 0 do
           final_s = s/2
           final_w = w/2
-          send neighbors_list |> selectRandom, {final_s, final_w}
+          send neighbors_list |> selectRandom, {:ok, final_s, final_w}
           final_sw = final_s/final_w  
           cond do  
             #check if you have not yet gone through 3 rounds
@@ -311,13 +312,17 @@ defmodule Project2 do
         nodesList |> Gossip.grid2DTopology(:imperf) 
     end  
 
+      IO.puts "<plotty: draw, #{numNodes}>"
+
       b = :os.system_time(:milli_seconds)
       cond do 
         algorithm == :gossip ->
           send nodesList |> elem(0), :gossip
           Gossip.checkConvergence(numNodes, b)
         true -> 
-         send nodesList |> Tuple.to_list |> Enum.random, {0, 0}
+         randomActorIndex = :rand.uniform(numNodes)-1
+         send nodesList |> elem(randomActorIndex), {:ok, 0,0}
+         #send nodesList |> Tuple.to_list |> Enum.random, {0, 0}
          Gossip.checkConvergence(numNodes, b)
       end
   end
