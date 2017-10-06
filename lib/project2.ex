@@ -1,9 +1,30 @@
 defmodule GossipSpread do
-  @interval 100
+  @interval 1
+
+  #function to select random neighbor
+  def selectRandom(neighbors_list) do
+    neighborCount = tuple_size(neighbors_list)
+    #neighborCount = Enum.count(neighbors_list)
+    if neighborCount > 0 do
+      selectedNeighborIndex = :rand.uniform(neighborCount)-1
+      selectedNeighbor = neighbors_list |> elem(selectedNeighborIndex)
+      if Process.alive?(selectedNeighbor) do
+        selectedNeighbor
+      else
+        selectRandom(neighbors_list)
+      end
+    else
+      receive do
+        :noNeighborLeft ->
+          true
+      end
+    end
+  end
+
   def rumor(neighbors_list, counter, master, procId) do
     #stop the process when counter reaches 10
     if counter >= 10 do
-      IO.puts "<plotty: inactive, #{procId}>"
+      #IO.puts "<plotty: inactive, #{procId}>"
       receive do
         :terminate ->
           rumor(neighbors_list, counter, master, procId)
@@ -14,11 +35,11 @@ defmodule GossipSpread do
         :gossip ->
           #IO.inspect procId
           if counter == 0 do
-            IO.puts "<plotty: infected, #{procId}>"
+            #IO.puts "<plotty: infected, #{procId}>"
             send master, :informed
           end
           #check if this node even knows the gossip
-          selectedNeighbor = neighbors_list |> Enum.random
+          selectedNeighbor = neighbors_list |> selectRandom#neighbors_list |> Enum.random
           send selectedNeighbor, :gossip
           GossipSpread.rumor(neighbors_list, counter+1, master, procId)
         neighbors_list ->
@@ -27,27 +48,11 @@ defmodule GossipSpread do
         @interval ->
           #check if this node even knows the gossip, select a random neighbor if true, and forward the gossip
           if counter > 0 do
-            selectedNeighbor = neighbors_list |> Enum.random
+            selectedNeighbor = neighbors_list |> selectRandom#,neighbors_list |> Enum.random
             send selectedNeighbor, :gossip
           end
           GossipSpread.rumor(neighbors_list, counter, master, procId)
       end
-    end
-  end
-
-  def selectRandom(neighbors_list) do
-    if Enum.count(neighbors_list) > 0 do
-      selectedNeighbor = neighbors_list |> Enum.random
-      if Process.alive?(selectedNeighbor) do
-        selectedNeighbor
-      else
-        List.delete(neighbors_list, selectedNeighbor) |> selectRandom
-      end
-    else
-      receive do
-        :noNeighborLeft ->
-          true
-      end   
     end
   end
 
@@ -123,18 +128,18 @@ defmodule Gossip do
     #no need to re-arrange nodesList
     Enum.each(0..numNodes-1, fn(i) ->
       #send list of neighbors of every ith to the ith node
-      neighbors_i = []
-      neighbors_i = cond do
+      neighbors_i = {}
+      cond do
        (i-1) >= 0 ->
-          neighbors_i ++ [nodesList |> elem(i-1)]
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(i-1))
         true ->
-          neighbors_i ++ [nodesList |> elem(numNodes-1)]
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(numNodes-1))
       end
-      neighbors_i = cond do
+      cond do
         (i+1) < numNodes ->
-          neighbors_i ++ [nodesList |> elem(i+1)]
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(i+1))
         true ->
-          neighbors_i ++ [nodesList |> elem(0)]
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(0))
       end
       currentNode = nodesList |> elem(i)
       send currentNode, neighbors_i
@@ -142,41 +147,45 @@ defmodule Gossip do
   end
 
   def grid2DTopology(nodesList, imperfect) do
-    #numNodes = tuple_size(nodesList)
+    numNodes = tuple_size(nodesList)
     side = :math.sqrt(tuple_size(nodesList)) |> round
     list2d = Gossip.segment(nodesList, {}, {}, 0, side)
     Enum.each(0..side-1, fn(i) -> 
       Enum.each(0..side-1, fn(j) ->
-        neighbors_ij = []
-        neighbors_ij = cond do
+        neighbors_ij = {}
+        cond do
           i-1 >= 0 ->
-            neighbors_ij ++ [list2d |> elem(i-1) |> elem(j)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i-1) |> elem(j))
           true ->
-            neighbors_ij ++ [list2d |> elem(side-1) |> elem(j)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(side-1) |> elem(j))
         end 
-        neighbors_ij = cond do
+        cond do
           i+1 < side ->
-            neighbors_ij ++ [list2d |> elem(i+1) |> elem(j)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i+1) |> elem(j))
           true -> 
-            neighbors_ij ++ [list2d |> elem(0) |> elem(j)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(0) |> elem(j))
         end 
-        neighbors_ij = cond do
+        cond do
           j-1 >= 0 ->
-            neighbors_ij ++ [list2d |> elem(i) |> elem(j-1)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(j-1))
           true -> 
-            neighbors_ij ++ [list2d |> elem(i) |> elem(side-1)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(side-1))
         end
-        neighbors_ij = cond do
+        cond do
           j + 1 < side ->
-            neighbors_ij ++ [list2d |> elem(i) |> elem(j+1)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(j+1))
           true ->
-            neighbors_ij ++ [list2d |> elem(i) |> elem(0)]
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(0))
         end
-        cond do #TODO: question -> can the randomly selected node be an existing neighbor
+        cond do 
           imperfect == :imperf ->
-            neighbors_ij = neighbors_ij ++ [Tuple.to_list(nodesList) -- [list2d |> elem(i) |> elem(j)|neighbors_ij] |> Enum.random]
+            randomNeighborIndex = :rand.uniform(numNodes-1)-1
+            randomNeighbor = nodesList 
+                                |> Tuple.delete_at(i*side+j) 
+                                |> elem(randomNeighborIndex)
+            neighbors_ij = neighbors_ij |> Tuple.append(randomNeighbor)
             send list2d |> elem(i) |> elem(j), neighbors_ij
-          true -> 
+          true ->
             send list2d |> elem(i) |> elem(j), neighbors_ij
           end
       end)
@@ -187,7 +196,7 @@ defmodule Gossip do
     numNodes = tuple_size(nodesList)
     Enum.each(0..numNodes-1, fn(i) -> 
       #send this nodes all the nodes other than itself, as neighbors
-      send nodesList |> elem(i), Tuple.to_list(nodesList) -- [elem(nodesList, i)]
+      send nodesList |> elem(i), Tuple.delete_at(nodesList, i)
     end) 
   end
 
@@ -250,6 +259,7 @@ end
 
 defmodule Project2 do
   def main(args) do
+
     numNodes = args 
               |> parse_args 
               |> Enum.at(0)
@@ -263,7 +273,7 @@ defmodule Project2 do
     algorithm = args
               |> parse_args
               |> Enum.at(2)
-    
+
     algorithm = 
       if algorithm == "gossip" do
         :gossip
