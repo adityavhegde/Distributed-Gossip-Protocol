@@ -318,7 +318,7 @@ defmodule Project2 do
           Gossip.checkConvergence(numNodes, b)
         true -> 
          send nodesList |> Tuple.to_list |> Enum.random, {0, 0}
-         Gossip.checkConvergence(numNodes, b)
+         numNodes*0.8 |> round |> Gossip.checkConvergence(numNodes, b)
       end
   end
 
