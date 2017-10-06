@@ -293,18 +293,20 @@ defmodule Project2 do
         Gossip.lineTopology(nodesList)
 
       "2D" ->
-        nodesList = :math.sqrt(numNodes) 
+        numNodes = :math.sqrt(numNodes) 
                     |> round
                     |> :math.pow(2)
                     |> round
+        nodesList = numNodes
                     |> Gossip.createProcesses(algorithm) 
         nodesList |> Gossip.grid2DTopology(:perf)
 
       "imp2D" ->
-        nodesList = :math.sqrt(numNodes) 
-                    |> Float.round(0)
+        numNodes = :math.sqrt(numNodes) 
+                    |> round
                     |> :math.pow(2)
                     |> round
+        nodesList = numNodes
                     |> Gossip.createProcesses(algorithm) 
         nodesList |> Gossip.grid2DTopology(:imperf) 
     end  
