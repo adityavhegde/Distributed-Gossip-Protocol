@@ -68,13 +68,13 @@ defmodule GossipSpread do
         cond do
           #check if you have not yet gone through 3 rounds
           Enum.count(past) < 3 ->
-            cond do
+            #cond do
               #check if this is the first time you are receiving (s,w) pair
-              Enum.count(past) == 0 ->
+            #  Enum.count(past) == 0 ->
                 #IO.puts "<plotty: infected, #{procId}>"
-              true ->
-                true
-            end
+            #  true ->
+            #    true
+            #end
             pushsum(neighbors_list, final_s, final_w, past ++ [final_sw], procId, master)
           #if more than 3 rounds done, check if no "significant" change has happened for last 3 consecutive rounds
           true -> 
@@ -224,7 +224,11 @@ defmodule Gossip do
     w = 1
     s = numNodes
     worker = Node.self() |> Node.spawn(GossipSpread, :pushsum, [[], s, w, [], numNodes, self()])
-    nodesList = Tuple.append(nodesList, worker)
+    if rem(numNodes, 1000) == 0 do
+      IO.puts numNodes
+    end
+    nodesList = List.insert_at(nodesList, 0, worker)
+    #nodesList = Tuple.append(nodesList, worker)
     Gossip.createProcesses(numNodes-1, nodesList, :pushsum)
   end
 
@@ -317,7 +321,7 @@ defmodule Project2 do
         nodesList |> Gossip.grid2DTopology(:imperf) 
     end  
 
-      IO.puts "<plotty: draw, #{numNodes}>"
+      #IO.puts "<plotty: draw, #{numNodes}>"
 
       b = :os.system_time(:milli_seconds)
       cond do 
