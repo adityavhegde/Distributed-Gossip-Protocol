@@ -24,7 +24,7 @@ defmodule GossipSpread do
   def rumor(neighbors_list, counter, master, procId) do
     #stop the process when counter reaches 10
     if counter >= 10 do
-      IO.puts "<plotty: inactive, #{procId}>"
+      #IO.puts "<plotty: inactive, #{procId}>"
       receive do
         :terminate ->
           rumor(neighbors_list, counter, master, procId)
@@ -35,7 +35,7 @@ defmodule GossipSpread do
         :gossip ->
           #IO.inspect procId
           if counter == 0 do
-            IO.puts "<plotty: infected, #{procId}>"
+            #IO.puts "<plotty: infected, #{procId}>"
             send master, :informed
           end
           #check if this node even knows the gossip
@@ -71,7 +71,7 @@ defmodule GossipSpread do
             cond do
               #check if this is the first time you are receiving (s,w) pair
               Enum.count(past) == 0 ->
-                IO.puts "<plotty: infected, #{procId}>"
+                #IO.puts "<plotty: infected, #{procId}>"
               true ->
                 true
             end
@@ -83,8 +83,8 @@ defmodule GossipSpread do
             c = abs(Enum.at(past, 1) - Enum.at(past, 0))
             #if no "significant change has happened, pause this process"
             if a < :math.pow(10, -10) and b < :math.pow(10, -10) and c < :math.pow(10, -10) do
-              IO.puts "<plotty: inactive, #{procId}>"
-              IO.inspect final_sw
+              #IO.puts "<plotty: inactive, #{procId}>"
+              #IO.inspect final_sw
               send master, :converged
               exit(:shutdown)
             end
@@ -99,7 +99,7 @@ defmodule GossipSpread do
           final_w = w/2
           send neighbors_list |> selectRandom, {:ok, final_s, final_w}
           final_sw = final_s/final_w  
-          cond do  
+          cond do
             #check if you have not yet gone through 3 rounds
             Enum.count(past) < 3 ->
               pushsum(neighbors_list, final_s, final_w, past ++ [final_sw], procId, master)
@@ -110,8 +110,8 @@ defmodule GossipSpread do
               c = abs(Enum.at(past, 1) - Enum.at(past, 0))
               #if no "significant change has happened, pause this process"
               if a < :math.pow(10, -10) and b < :math.pow(10, -10) and c < :math.pow(10, -10) do
-                IO.puts "<plotty: inactive, #{procId}>"
-                IO.inspect final_sw
+                #IO.puts "<plotty: inactive, #{procId}>"
+                #IO.inspect final_sw
                 send master, :converged
                 exit(:shutdown)
               end
@@ -203,7 +203,7 @@ defmodule Gossip do
 
   # takes args of num of processes to be created and returns a list of process ids
   def createProcesses(numNodes, algorithm) do
-    nodesList = {}
+    nodesList = []
     Gossip.createProcesses(numNodes, nodesList, algorithm)
   end
   def createProcesses(0, nodesList, _) do
@@ -212,7 +212,11 @@ defmodule Gossip do
   #if gossip algorithm
   def createProcesses(numNodes, nodesList, :gossip) do
     worker = Node.self() |> Node.spawn(GossipSpread, :rumor, [[], 0, self(), numNodes])
-    nodesList = Tuple.append(nodesList, worker)
+    if rem(numNodes, 1000) == 0 do
+      IO.puts numNodes
+    end
+    nodesList = List.insert_at(nodesList, 0, worker)
+    #nodesList = Tuple.append(nodesList, worker)
     Gossip.createProcesses(numNodes-1, nodesList, :gossip)
   end
   #if push-sum algorithm
@@ -282,15 +286,14 @@ defmodule Project2 do
         :pushsum
       end
     
-    IO.puts "<plotty: draw, #{numNodes}>"
 
     case topology do
       "full" ->
-        nodesList = numNodes |> Gossip.createProcesses(algorithm) 
+        nodesList = numNodes |> Gossip.createProcesses(algorithm) |> List.to_tuple
         nodesList |> Gossip.fullTopology
 
       "line" ->
-        nodesList = numNodes |> Gossip.createProcesses(algorithm) 
+        nodesList = numNodes |> Gossip.createProcesses(algorithm) |> List.to_tuple
         Gossip.lineTopology(nodesList)
 
       "2D" ->
@@ -300,6 +303,7 @@ defmodule Project2 do
                     |> round
         nodesList = numNodes
                     |> Gossip.createProcesses(algorithm) 
+                    |> List.to_tuple
         nodesList |> Gossip.grid2DTopology(:perf)
 
       "imp2D" ->
@@ -309,6 +313,7 @@ defmodule Project2 do
                     |> round
         nodesList = numNodes
                     |> Gossip.createProcesses(algorithm) 
+                    |> List.to_tuple
         nodesList |> Gossip.grid2DTopology(:imperf) 
     end  
 
@@ -322,8 +327,7 @@ defmodule Project2 do
         true -> 
          randomActorIndex = :rand.uniform(numNodes)-1
          send nodesList |> elem(randomActorIndex), {:ok, 0,0}
-         #send nodesList |> Tuple.to_list |> Enum.random, {0, 0}
-         Gossip.checkConvergence(numNodes, b)
+         numNodes*0.8 |> round |> Gossip.checkConvergence(b)
       end
   end
 
