@@ -1,146 +1,235 @@
 defmodule GossipSpread do
   @interval 1
-  def rumor(neighbors_list, counter, master) do
-    cond do
-      #stop the process when counter reaches 10
-      counter >= 10 ->
-        #IO.puts "<plotty: inactive, #{self()}>"
-        exit(:shutdown)
-    true ->
-      receive do
-        :gossip ->
-          case counter do
-            #got the rumor for the first time
-            0 ->
-              send master, :informed
-              #IO.puts "<plotty: infected, #{self()}>"
+  
+  #function to select random neighbor
+  def selectRandom(neighbors_list) do
+    neighborCount = tuple_size(neighbors_list)
+    selectedNeighborIndex = :rand.uniform(neighborCount)-1
+    selectedNeighbor = neighbors_list |> elem(selectedNeighborIndex)
+    if Process.alive?(selectedNeighbor) do
+      selectedNeighbor
+    else 
+      neighbors_list |> selectRandom
+    end
+  end
+
+  #function to send gossip to a random neighbor
+  def sendGossip(neighbors_list, {:ok, myPID, final_s, final_w}) do
+    send neighbors_list |> selectRandom, {:ok, myPID, final_s, final_w}
+    receive do
+      :inactive ->
+        sendGossip(neighbors_list, {:ok, myPID, final_s, final_w})
+      :active ->
+        true
+    end
+  end
+
+  def rumor(neighbors_list, counter, master, procId) do
+    #stop the process when counter reaches 10
+    receive do
+      :gossip ->
+        if counter == 0 do
+          send master, :informed
+        end
+        #check if this node even knows the gossip
+        selectedNeighbor = neighbors_list |> selectRandom#
+        send selectedNeighbor, :gossip
+        GossipSpread.rumor(neighbors_list, counter+1, master, procId)
+      neighbors_list ->
+        GossipSpread.rumor(neighbors_list, counter, master, procId)
+    after 
+      @interval ->
+        #check if this node even knows the gossip, select a random neighbor if true, and forward the gossip
+        if counter > 0 do
+          if counter >= 10 do
+            GossipSpread.rumor(neighbors_list, counter, master, procId)
+          else
+            selectedNeighbor = neighbors_list |> selectRandom
+            send selectedNeighbor, :gossip
+            GossipSpread.rumor(neighbors_list, counter, master, procId)
           end
-          GossipSpread.rumor(neighbors_list, counter+1, master) 
-        updated_neighbors_list ->
-          GossipSpread.rumor(updated_neighbors_list, counter, master)
-      after 
-        @interval ->
+        else
+          GossipSpread.rumor(neighbors_list, counter, master, procId)
+        end
+    end
+  end
+
+  def pushsum(neighbors_list, s, w, past, procId, master) do
+    interval = 100
+    receive do
+      #if received a (s,w) pair, add it to your current, half it and send half forward
+      {:ok, rec_s, rec_w} -> 
+        final_s = (s+rec_s)/2
+        final_w = (w+rec_w)/2
+        send neighbors_list |> selectRandom, {:ok, final_s, final_w}
+        final_sw = final_s/final_w
+        cond do
+          #check if you have not yet gone through 3 rounds
+          Enum.count(past) < 3 ->
+            pushsum(neighbors_list, final_s, final_w, past ++ [final_sw], procId, master)
+          #if more than 3 rounds done, check if no "significant" change has happened for last 3 consecutive rounds
+          true -> 
+            a = abs(final_sw - s/w)
+            b = abs(Enum.at(past, 2) - Enum.at(past, 1))
+            c = abs(Enum.at(past, 1) - Enum.at(past, 0))
+            #if no "significant change has happened, pause this process"
+            if a < :math.pow(10, -10) and b < :math.pow(10, -10) and c < :math.pow(10, -10) do
+              send master, :converged
+              #IO.puts final_sw
+              exit(:shutdown)
+            end
+            pushsum(neighbors_list, final_s, final_w, tl(past) ++ [final_sw], procId, master)
+        end
+      neighbors_list ->
+        pushsum(neighbors_list, s, w, past, procId, master) 
+    after 
+      interval ->
+        if Enum.count(past) > 0 do
+          final_s = s/2
+          final_w = w/2
+          send neighbors_list |> selectRandom, {:ok, final_s, final_w}
+          final_sw = final_s/final_w  
           cond do
-            #check if this node even knows the gossip
-            counter > 0 and Enum.count(neighbors_list)!=0->
-              selectedNeighbor = neighbors_list |> Enum.random
-              cond do
-                Process.alive?(selectedNeighbor) ->
-                send selectedNeighbor, :gossip
-              true ->
-                List.delete(neighbors_list, selectedNeighbor)
-                GossipSpread.rumor(neighbors_list, counter, master)
+            #check if you have not yet gone through 3 rounds
+            Enum.count(past) < 3 ->
+              pushsum(neighbors_list, final_s, final_w, past ++ [final_sw], procId, master)
+              #if more than 3 rounds done, check if no "significant" change has happened for last 3 consecutive rounds
+            true -> 
+              a = abs(final_sw - s/w)
+              b = abs(Enum.at(past, 2) - Enum.at(past, 1))
+              c = abs(Enum.at(past, 1) - Enum.at(past, 0))
+              #if no "significant change has happened, pause this process"
+              if a < :math.pow(10, -10) and b < :math.pow(10, -10) and c < :math.pow(10, -10) do
+                send master, :converged
+                #IO.puts final_sw
+                exit(:shutdown)
+              else
+                pushsum(neighbors_list, final_s, final_w, tl(past) ++ [final_sw], procId, master)
               end
-            true ->
-              GossipSpread.rumor(neighbors_list, counter, master)
-          end
-      end
+          end 
+        else
+          pushsum(neighbors_list, s, w, past, procId, master)  
+        end      
     end
   end
 end
 
 defmodule Gossip do
-
   def lineTopology(nodesList) do
     numNodes = tuple_size(nodesList)
-    #IO.inspect Process.registered()
     #no need to re-arrange nodesList
     Enum.each(0..numNodes-1, fn(i) ->
       #send list of neighbors of every ith to the ith node
-      neighbors_i = []
-      if (i-1) >= 0 do
-        neighbors_i = neighbors_i ++ [nodesList |> elem(i-1)]
+      neighbors_i = {}
+      cond do
+       (i-1) >= 0 ->
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(i-1))
+        true ->
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(numNodes-1))
       end
-      if (i+1) <numNodes do
-        neighbors_i = neighbors_i ++ [nodesList |> elem(i+1)]
+      cond do
+        (i+1) < numNodes ->
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(i+1))
+        true ->
+          neighbors_i = Tuple.append(neighbors_i, nodesList |> elem(0))
       end
       currentNode = nodesList |> elem(i)
       send currentNode, neighbors_i
     end)
-    b = :os.system_time(:milli_seconds)
-    send nodesList |> elem(0), :gossip
-    Gossip.checkConvergence(numNodes, b)
   end
 
-
-  def grid2DTopology(nodesList) do
-
-    len = :math.sqrt(tuple_size(nodesList)) |> round
-
-    list2d = Gossip.segment(nodesList, {}, {}, 0, len)
-    
-    Enum.each(0..len-1, fn(i) -> 
-      Enum.each(0..len-1, fn(j) ->
-        neighbors = []
+  def grid2DTopology(nodesList, imperfect) do
+    numNodes = tuple_size(nodesList)
+    side = :math.sqrt(tuple_size(nodesList)) |> round
+    list2d = Gossip.segment(nodesList, {}, {}, 0, side)
+    Enum.each(0..side-1, fn(i) -> 
+      Enum.each(0..side-1, fn(j) ->
+        neighbors_ij = {}
         cond do
           i-1 >= 0 ->
-            neighbors = neighbors ++ [list2d |> elem(i-1) |> elem(j)]
-          true ->true
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i-1) |> elem(j))
+          true ->
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(side-1) |> elem(j))
         end 
-
         cond do
-          i+1 < len ->
-            neighbors = neighbors ++ [list2d |> elem(i+1) |> elem(j)]
-          true -> true
+          i+1 < side ->
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i+1) |> elem(j))
+          true -> 
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(0) |> elem(j))
         end 
-
         cond do
           j-1 >= 0 ->
-            neighbors = neighbors ++ [list2d |> elem(i) |> elem(j-1)]
-          true -> true
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(j-1))
+          true -> 
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(side-1))
         end
-
         cond do
-          j + 1 < len ->
-            neighbors = neighbors ++ [list2d |> elem(i) |> elem(j+1)]
-          true -> true
+          j + 1 < side ->
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(j+1))
+          true ->
+            neighbors_ij = neighbors_ij |> Tuple.append(list2d |> elem(i) |> elem(0))
         end
-
-        #send
-          send list2d |> elem(i) |> elem(j), neighbors   
-
+        cond do 
+          imperfect == :imperf ->
+            randomNeighborIndex = :rand.uniform(numNodes-1)-1
+            randomNeighbor = nodesList 
+                                |> Tuple.delete_at(i*side+j) 
+                                |> elem(randomNeighborIndex)
+            neighbors_ij = neighbors_ij |> Tuple.append(randomNeighbor)
+            send list2d |> elem(i) |> elem(j), neighbors_ij
+          true ->
+            send list2d |> elem(i) |> elem(j), neighbors_ij
+          end
       end)
     end)
-
-    send list2d |> elem(0) |> elem(0), :gossip 
-    
-  end
-
-  def gridImpTopology(nodesList) do
-  
   end
 
   def fullTopology(nodesList) do
-    Enum.each(0..tuple_size(nodesList), fn(index) -> 
-      send nodesList |> elem(index), Tuple.to_list(nodesList) -- [elem(nodesList, index)]
+    numNodes = tuple_size(nodesList)
+    Enum.each(0..numNodes-1, fn(i) -> 
+      #send this nodes all the nodes other than itself, as neighbors
+      send nodesList |> elem(i), Tuple.delete_at(nodesList, i)
     end) 
-    send nodesList |> elem(0), :gossip
   end
 
   # takes args of num of processes to be created and returns a list of process ids
-  def createProcesses(numNodes) do
-    nodesList = {}
-    Gossip.createProcesses(numNodes, nodesList)
+  def createProcesses(numNodes, algorithm) do
+    nodesList = []
+    Gossip.createProcesses(numNodes, nodesList, algorithm)
   end
-  def createProcesses(0, nodesList) do
+  def createProcesses(0, nodesList, _) do
     nodesList
   end
-  def createProcesses(numNodes, nodesList) do
-    worker = Node.self() |> Node.spawn(GossipSpread, :rumor, [[], 0, self()])
-    #Process.register worker, String.to_atom("NodeNew"<>"#{numNodes}")
-    nodesList = Tuple.append(nodesList, worker)
-    Gossip.createProcesses(numNodes-1, nodesList)
+  #if gossip algorithm
+  def createProcesses(numNodes, nodesList, :gossip) do
+    worker = Node.self() |> Node.spawn(GossipSpread, :rumor, [[], 0, self(), numNodes])
+    nodesList = List.insert_at(nodesList, 0, worker)
+    Gossip.createProcesses(numNodes-1, nodesList, :gossip)
+  end
+  #if push-sum algorithm
+  def createProcesses(numNodes, nodesList, :pushsum) do
+    w = 1
+    s = numNodes
+    worker = Node.self() |> Node.spawn(GossipSpread, :pushsum, [[], s, w, [], numNodes, self()])
+    nodesList = List.insert_at(nodesList, 0, worker)
+    Gossip.createProcesses(numNodes-1, nodesList, :pushsum)
   end
 
   def checkConvergence(0, b) do
-    IO.inspect :os.system_time(:milli_seconds)-b
-    IO.inspect "We have converged"
+    IO.inspect "Time to converge: #{:os.system_time(:milli_seconds)-b} milliseconds"
+    receive do 
+      :ok ->
+        :ok
+    end
   end
   def checkConvergence(nodesToInform, b) do
     receive do
       #check if a node has been informed of a gossip
       :informed ->
-        #IO.inspect "Nodes left: #{nodesToInform}"
+        Gossip.checkConvergence(nodesToInform-1, b)
+        #IO.puts nodesToInform
+      #check if a node has gone to stable state in push-sum
+      :converged ->
         Gossip.checkConvergence(nodesToInform-1, b)
     end
   end
@@ -163,6 +252,7 @@ end
 
 defmodule Project2 do
   def main(args) do
+
     numNodes = args 
               |> parse_args 
               |> Enum.at(0)
@@ -173,35 +263,66 @@ defmodule Project2 do
               |> parse_args 
               |> Enum.at(1)
     
-    #IO.puts "<plotty: draw, #{numNodes}>"
+    algorithm = args
+              |> parse_args
+              |> Enum.at(2)
+
+    algorithm = 
+      if algorithm == "gossip" do
+        :gossip
+      else 
+        :pushsum
+      end
+    
 
     case topology do
       "full" ->
-        numNodes |> Gossip.createProcesses |> Gossip.fullTopology
-
-      "2D" ->
-        :math.sqrt(numNodes) 
-          |> Float.round(0)
-          |> :math.pow(2)
-          |> Gossip.createProcesses 
-          |> Gossip.grid2DTopology
+        nodesList = numNodes |> Gossip.createProcesses(algorithm) |> List.to_tuple
+        nodesList |> Gossip.fullTopology
 
       "line" ->
-        numNodes |> Gossip.createProcesses |> Gossip.lineTopology
+        nodesList = numNodes |> Gossip.createProcesses(algorithm) |> List.to_tuple
+        Gossip.lineTopology(nodesList)
+
+      "2D" ->
+        numNodes = :math.sqrt(numNodes) 
+                    |> round
+                    |> :math.pow(2)
+                    |> round
+        nodesList = numNodes
+                    |> Gossip.createProcesses(algorithm) 
+                    |> List.to_tuple
+        nodesList |> Gossip.grid2DTopology(:perf)
 
       "imp2D" ->
-        :math.sqrt(numNodes) 
-        |> Float.round(0)
-        |> :math.pow(2)
-        |> Gossip.createProcesses 
-        |> Gossip.gridImpTopology
-    end
+        numNodes = :math.sqrt(numNodes) 
+                    |> round
+                    |> :math.pow(2)
+                    |> round
+        nodesList = numNodes
+                    |> Gossip.createProcesses(algorithm) 
+                    |> List.to_tuple
+        nodesList |> Gossip.grid2DTopology(:imperf) 
+    end  
+
+      #IO.puts "<plotty: draw, #{numNodes}>"
+
+      b = :os.system_time(:milli_seconds)
+      cond do 
+        algorithm == :gossip ->
+          send nodesList |> elem(0), :gossip
+          Gossip.checkConvergence(numNodes, b)
+        true -> 
+         randomActorIndex = :rand.uniform(numNodes)-1
+         send nodesList |> elem(randomActorIndex), {:ok, 0,0}
+         numNodes*0.8 |> round |> Gossip.checkConvergence(b)
+      end
   end
 
   #parsing the input argument
   defp parse_args(args) do
     {_, word, _} = args 
-    |> OptionParser.parse(strict: [:string, :integer])
+    |> OptionParser.parse(strict: [:integer, :string, :string])
     word
   end
 end
